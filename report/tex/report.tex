@@ -203,29 +203,56 @@ traceroute to 10.0.10.1 (10.0.10.1), 64 hops max, 40 byte packets
 
 \section{Маршрутизация}
 
-% На пути здесь достаточно быть одному аршрутизатору!
+Пример косвенной маршрутизации при передаче пакета \\
+от ws1 (eth0 - a6:f9:52:b6:1e:69 - 10.0.20.2/24) 
+до r1 (eth0 - 0e:ab:f8:0c:10:4b - 10.0.10.1/24)\\
+через r2 (eth2 - 4a:6c:31:ed:d1:db - 10.0.20.1/24 и eth0 - 3a:40:ee:31:9e:cd - 10.0.10.2/24).
 
-Вначале стоит написать, какие MAC-адреса интерфейсов в опыте были у каких машин.
-Затем вывести маршрутную таблицу маршрутизатора (вывод команды ip r!)
+Маршрутная таблица маршрутизатора r2 (вывод команды ip r):
 
 \begin{Verbatim}
-маршрутная таблица маршрутизатора
+10.0.20.0/24 dev eth2  proto kernel  scope link  src 10.0.20.1 
+10.0.50.0/24 via 10.0.30.2 dev eth1 
+10.0.30.0/24 dev eth1  proto kernel  scope link  src 10.0.30.1 
+10.0.40.0/24 via 10.0.10.1 dev eth0 
+10.0.10.0/24 dev eth0  proto kernel  scope link  src 10.0.10.2 
 \end{Verbatim}
 
 Показаны опыты после стирания кеша ARP.
-% Не забудьте это сделать!
-Далее показана отправка пакета на маршрутизатор (косвенная маршрутизация). 
 
+На ws1 будет вызвана команда:
 \begin{Verbatim}
-Тут должен быть виден arp и затем посылка пакета маршрутизатору. 
-С мак-адресами.
+ping 10.0.10.1
 \end{Verbatim}
 
-Затем маршрутизатор отправил его далее.
+Далее показана отправка пакета на маршрутизатор r2 (косвенная маршрутизация). 
 
 \begin{Verbatim}
-Тут должен быть виден arp и затем посылка пакета маршрутизатором конечному получателю. 
-С мак-адресами.
+tcpdump -tne -i eth2
+
+a6:f9:52:b6:1e:69 > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), 
+     length 42: arp who-has 10.0.20.1 tell 10.0.20.2
+4a:6c:31:ed:d1:db > a6:f9:52:b6:1e:69, ethertype ARP (0x0806), 
+    length 42: arp reply 10.0.20.1 is-at 4a:6c:31:ed:d1:db
+a6:f9:52:b6:1e:69 > 4a:6c:31:ed:d1:db, ethertype IPv4 (0x0800), 
+    length 98: 10.0.20.2 > 10.0.10.1: ICMP echo request, id 23554, seq 1, length 64
+4a:6c:31:ed:d1:db > a6:f9:52:b6:1e:69, ethertype IPv4 (0x0800), 
+    length 98: 10.0.10.1 > 10.0.20.2: ICMP echo reply, id 23554, seq 1, length 64
+\end{Verbatim}
+
+Затем маршрутизатор отправил его далее на маршрутизатор r1.
+
+\begin{Verbatim}
+tcpdump -tne -i eth0
+
+3a:40:ee:31:9e:cd > ff:ff:ff:ff:ff:ff, ethertype ARP (0x0806), 
+    length 42: arp who-has 10.0.10.1 tell 10.0.10.2
+0e:ab:f8:0c:10:4b > 3a:40:ee:31:9e:cd, ethertype ARP (0x0806), 
+    length 42: arp reply 10.0.10.1 is-at 0e:ab:f8:0c:10:4b
+3a:40:ee:31:9e:cd > 0e:ab:f8:0c:10:4b, ethertype IPv4 (0x0800), 
+    length 98: 10.0.20.2 > 10.0.10.1: ICMP echo request, id 23554, seq 1, length 64
+0e:ab:f8:0c:10:4b > 3a:40:ee:31:9e:cd, ethertype IPv4 (0x0800), 
+    length 98: 10.0.10.1 > 10.0.20.2: ICMP echo reply, id 23554, seq 1, length 64
 \end{Verbatim}
 
 \section{Продолжительность жизни пакета}
