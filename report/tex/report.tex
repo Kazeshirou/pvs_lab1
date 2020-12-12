@@ -257,74 +257,106 @@ tcpdump -tne -i eth0
 
 \section{Продолжительность жизни пакета}
 
-Сначала написать как и на чём ломали. 
+Для создания маршрутной петли (сеть 10.0.40.0/24 будет завёрнута между r2 и r1) на маршрутизаторе r1 были запущены следующие команды:
 
 \begin{Verbatim}
-Команды ломания
+ip l set eth1 down
+ip r add 10.0.40.0/24 via 10.0.10.2 dev eth0
 \end{Verbatim}
 
-Потом какая-то таблица вышла.
+Теперь на r1 таблица маршрутизации выглядит следующим образом:
 
 \begin{Verbatim}
-Испорченная таблица маршрутизации
+10.0.20.0/24 via 10.0.10.2 dev eth0 
+10.0.30.0/24 via 10.0.10.2 dev eth0 
+10.0.40.0/24 via 10.0.10.2 dev eth0 
+10.0.10.0/24 dev eth0  proto kernel  scope link  src 10.0.10.1
 \end{Verbatim}
 
-Потом что слали.
+С ws1 отправим ping в завёрнутую сеть:
 
 \begin{Verbatim}
-Команда посылки
+ping 10.0.40.2 -c 1
+PING 10.0.40.2 (10.0.40.2) 56(84) bytes of data.
+From 10.0.10.1 icmp_seq=1 Time to live exceeded
 \end{Verbatim}
 
-И что в итоге получилось.
-
+ На r2 будем перехватывать трафик на интерфейсе, подключенном к завёрнутой сети:
 \begin{Verbatim}
-Чуть сокращеннный лог, с мак адресами
+tcpdump -tnve -i eth0
+3a:40:ee:31:9e:cd > 0e:ab:f8:0c:10:4b, ethertype IPv4 (0x0800), length 98: 
+    (tos 0x0, ttl 63, id 0, offset 0, flags [DF], proto ICMP (1), length 84) 
+    10.0.20.2 > 10.0.40.2: ICMP echo request, id 22018, seq 1, length 64
+0e:ab:f8:0c:10:4b > 3a:40:ee:31:9e:cd, ethertype IPv4 (0x0800), length 98: 
+    (tos 0x0, ttl 62, id 0, offset 0, flags [DF], proto ICMP (1), length 84) 
+    10.0.20.2 > 10.0.40.2: ICMP echo request, id 22018, seq 1, length 64
+...
+0e:ab:f8:0c:10:4b > 3a:40:ee:31:9e:cd, ethertype IPv4 (0x0800), length 98: 
+    (tos 0x0, ttl 2, id 0, offset 0, flags [DF], proto ICMP (1), length 84) 
+    10.0.20.2 > 10.0.40.2: ICMP echo request, id 22018, seq 1, length 64
+3a:40:ee:31:9e:cd > 0e:ab:f8:0c:10:4b, ethertype IPv4 (0x0800), length 98: 
+    (tos 0x0, ttl 1, id 0, offset 0, flags [DF], proto ICMP (1), length 84) 
+    10.0.20.2 > 10.0.40.2: ICMP echo request, id 22018, seq 1, length 64
+0e:ab:f8:0c:10:4b > 3a:40:ee:31:9e:cd, ethertype IPv4 (0x0800), length 126: 
+    (tos 0xc0, ttl 64, id 42765, offset 0, flags [none], proto ICMP (1), length 112) 
+    10.0.10.1 > 10.0.20.2: ICMP time exceeded in-transit, length 92
+        (tos 0x0, ttl 1, id 0, offset 0, flags [DF], proto ICMP (1), length 84) 
+        10.0.20.2 > 10.0.40.2: ICMP echo request, id 22018, seq 1, length 64
 \end{Verbatim}
 
-И кто в итоге отравил сообщение о завершении жизни.
+В итоге, когда r1 должен был в очередной раз отправить пакет на r2,  TTL достигло значения 0, и  r1 отправил ICMP-сообщение с информацией о том, что время жизни пакета истекло.
 
 \section{Изучение IP-фрагментации}
 
-Написать, на каких узлах и как изменяли MTU.
-
-
+Уменьшим MTU сети 10.0.30.0/24. Для этого на r2 введём команду:
 \begin{Verbatim}
-Изменение MTU
+ip l set dev eth1 mtu 576
 \end{Verbatim}
 
+А на r3:
 \begin{Verbatim}
-Изменение MTU
+ip l set dev eth0 mtu 576
 \end{Verbatim}
 
-% Напоминаем, что PMTU следует отключить!
-
-Какие команды давали для тестирования и где.
-
+На ws1 отключим PMTU и запустим ping с размером пакета 1000 на ws2:
 \begin{Verbatim}
-Здесь вписать команду
+echo 1 > /proc/sys/net/ipv4/ip_no_pmtu_disc
+ping 10.0.50.2 -c 1 -s 1000
 \end{Verbatim}
 
-Вывод \textbf{tcpdump} на маршрутизаторе перед сетью с уменьшенным MTU.
-
-% Вывод в ширину можно и сократить, удалив несущественные моменты!
+Вывод \textbf{tcpdump} на маршрутизаторе r2 перед сетью с уменьшенным MTU.
 
 \begin{Verbatim}
-Здесь вывод tcpdump, мак адреса не нужны.
+tcpdump -tnv -i eth2
+IP (tos 0x0, ttl 64, id 61706, offset 0, flags [none], proto ICMP (1), length 1028)
+    10.0.20.2 > 10.0.50.2: ICMP echo request, id 22786, seq 1, length 1008
+IP (tos 0x0, ttl 62, id 2471, offset 0, flags [none], proto ICMP (1), length 1028)
+    10.0.50.2 > 10.0.20.2: ICMP echo reply, id 22786, seq 1, length 1008
 \end{Verbatim}
 
-Вывод \textbf{tcpdump} на маршрутизаторе после сети с уменьшенным MTU.
-
-% Вывод в ширину можно и сократить, удалив несущественные моменты!
+Вывод \textbf{tcpdump} на маршрутизаторе r3 после сети с уменьшенным MTU.
 
 \begin{Verbatim}
-Здесь вывод tcpdump, мак адреса не нужны.
+tcpdump -tnv -i eth0
+IP (tos 0x0, ttl 63, id 61706, offset 0, flags [+], proto ICMP (1), length 572) 
+    10.0.20.2 > 10.0.50.2: ICMP echo request, id 22786, seq 1, length 552
+IP (tos 0x0, ttl 63, id 61706, offset 552, flags [none], proto ICMP (1), length 476) 
+    10.0.20.2 > 10.0.50.2: icmp
+IP (tos 0x0, ttl 63, id 2471, offset 0, flags [+], proto ICMP (1), length 572)
+    10.0.50.2 > 10.0.20.2: ICMP echo reply, id 22786, seq 1, length 552
+IP (tos 0x0, ttl 63, id 2471, offset 552, flags [none], proto ICMP (1), length 476)
+    10.0.50.2 > 10.0.20.2: icmp
 \end{Verbatim}
 
 
-Вывод \textbf{tcpdump} на узле получателя.
+Вывод \textbf{tcpdump} на ws2.
 
 \begin{Verbatim}
-Здесь вывод tcpdump, мак адреса не нужны.
+tcpdump -tnv -i eth0
+IP (tos 0x0, ttl 62, id 61706, offset 0, flags [none], proto ICMP (1), length 1028) 
+    10.0.20.2 > 10.0.50.2: ICMP echo request, id 22786, seq 1, length 1008
+IP (tos 0x0, ttl 64, id 2471, offset 0, flags [none], proto ICMP (1), length 1028)
+    10.0.50.2 > 10.0.20.2: ICMP echo reply, id 22786, seq 1, length 1008
 \end{Verbatim}
 
 
